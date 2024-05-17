@@ -642,6 +642,73 @@ class eISCP(object):
             message='MGS<mgs zone="1"><groupid>0</groupid></mgs>'
         return self.raw(message)
 
+    def grouped_with(self, timeout=1):
+        """Return a list of receiver objects we are currently grouped with and their role"""
+        group_list = []
+        # get our own group info
+        mygroups = self.get_groups()
+        mygroupids = []
+        if not mygroups:
+            # we are not part of a group, no need to waste time on discovering other receivers on the network
+            return None
+        # we are part of a group. Add ourselve to the group dict
+        for group in mygroups:
+            group_list.append({ "identifier" : self.identifier,
+                                "host" : self.host,
+                                "model_name" : self.model_name,
+                                "zoneid" : group["id"],
+                                "groupid" : group["groupid"],
+                                "role" : group["role"],
+                                "powerstate" : group["powerstate"]
+                                })
+            mygroupids.append(group["groupid"])
+        # now let's find our group friends
+        receivers = self.discover(timeout=timeout)
+        for receiver in receivers:
+            if receiver.identifier == self.identifier:
+                # no need to parse ourselves
+                continue
+            receivergroups = receiver.get_groups()
+            for theirgroup in receivergroups:
+                # check if their groupid matches any of our groupids
+                if theirgroup["groupid"] in mygroupids:
+                    # we have a match, append it to the group_list
+                    group_list.append({ "identifier" : receiver.identifier,
+                                        "host" : receiver.host,
+                                        "model_name" : receiver.model_name,
+                                        "zoneid" : theirgroup["id"],
+                                        "groupid" : theirgroup["groupid"],
+                                        "role" : theirgroup["role"],
+                                        "powerstate" : theirgroup["powerstate"]
+                                        })
+        return group_list
+
+    def get_groups(self):
+        """Show the current groups info for this receiver.
+        This returns a list of all zones in the receiver that are part of a multiroom audio group.
+        In most cases this will be an empty list (not grouped), or have a single entry.
+        In rare cases (e.g. receiver with both a main zone and a Zone2 that are participating in a group) you can get a multi-item list.
+        The items in the list are a dict with all the info returned by the receiver.
+        The interesting parts of this dict are (IMHO): "groupid", "role", "powerstate"
+        Determining which receivers are part of the group has to be done separately, by finding all receivers participating with the same groupid. One will have 'role' : 'src', all others will have 'role' : 'dst' (for source and destination)
+        """
+        message = 'MDIQSTN'
+        data = self.raw(message)
+        grouped_zones=[]
+        if data:
+            # strip the "MDI" from the start of the reply
+            data = data.replace('MDI','')
+            # turn it into a dict
+            data = xmltodict.parse(data, attr_prefix="")
+            # Cast OrderedDict to dict
+            data = json.loads(json.dumps(data))
+            # the interesting part here is the ["mdi"]["zonelist"]["zone"] part
+            zonelist = data["mdi"]["zonelist"]["zone"]
+            for zone in zonelist:
+                if zone["groupid"] != '0' and zone["role"] != 'none':
+                    grouped_zones.append(zone)
+        return grouped_zones
+
     def get_nri(self):
         """Return NRI info as dict."""
         data = self.command("dock.receiver-information=query")[1]

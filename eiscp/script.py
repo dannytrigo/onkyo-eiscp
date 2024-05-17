@@ -6,6 +6,7 @@ Usage:
   %(prog_n_space)s [--verbose | -v]... [--quiet | -q]... <command>...
   %(program_name)s --discover
   %(program_name)s [--host <host>] [--group_with <otherhost> ...] 
+  %(program_name)s [--host <host>] [--grouped_with] 
   %(program_name)s --help-commands [<zone> <command>]
   %(program_name)s -h | --help
 
@@ -120,6 +121,32 @@ def main(argv=sys.argv):
 
     if options['--group_with']:
         receivers[0].group_with(options['<otherhost>'])
+
+    if options['--grouped_with']:
+        groupdata = receivers[0].grouped_with()
+        if groupdata:
+            # get a list of the active groups and their groupid. Normally this is only a single item
+            groups = set([dev["groupid"] for dev in groupdata])
+            for group in groups:
+                # find the source
+                source = [ dev for dev in groupdata if dev["groupid"] == group and dev["role"] == "src" ]
+                if source:
+                    source = source[0]
+                else:
+                    print("failed to detect the source for groupid %s" %(group))
+                    print(groupdata)
+                    return
+                destinations = [ dev for dev in groupdata if dev["groupid"] == group and dev["role"] == "dst" ]
+                if destinations:
+                    pass
+                else:
+                    print("failed to detect the destinations for groupid %s" %(group))
+                    print(groupdata)
+                    return
+                print("Multiroom audio group active with groupid %s" %(group))
+                print("source: %s on address: %s" %(source["model_name"], source["host"]))
+                for destination in destinations:
+                    print("destination: %s on address: %s" %(destination["model_name"], destination["host"]))
 
     # List of commands to execute - deal with special shortcut case
     to_execute = options['<command>']
